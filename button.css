@@ -1,0 +1,60 @@
+.igss-button {
+  --_bg: rgb(0 0 0 / 0.55);
+  --_ring: transparent;
+
+  position: fixed;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--_bg);
+  box-shadow: 0 0 0 2px var(--_ring), 0 2px 8px rgb(0 0 0 / 0.3);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.igss-button[hidden] {
+  display: none;
+}
+
+.igss-button:hover {
+  --_bg: rgb(0 0 0 / 0.75);
+}
+
+.igss-button:focus-visible {
+  outline: none;
+  --_ring: #fff;
+}
+
+.igss-button[data-state="done"] {
+  --_bg: #1f9d55;
+}
+
+.igss-button[data-state="error"] {
+  --_bg: #d64545;
+}
+
+.igss-button[data-state="busy"] {
+  cursor: progress;
+}
+
+.igss-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.igss-button[data-state="busy"] svg {
+  animation: igss-spin 0.8s linear infinite;
+}
+
+@keyframes igss-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

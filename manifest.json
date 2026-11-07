@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "IG Story Saver",
+  "version": "1.0.0",
+  "description": "Download the Instagram story you're watching, in its original quality.",
+  "permissions": ["downloads"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["page.js"],
+      "css": ["button.css"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
