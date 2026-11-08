@@ -53,6 +53,58 @@
   animation: igss-spin 0.8s linear infinite;
 }
 
+/* Feed / post: plain icon next to Instagram's Save icon */
+.igss-save-row {
+  display: flex;
+  align-items: center;
+}
+
+.igss-inline {
+  --_color: currentColor;
+  --_opacity: 1;
+
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: var(--_color);
+  opacity: var(--_opacity);
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.igss-inline:hover {
+  --_opacity: 0.5;
+}
+
+.igss-inline:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.igss-inline[data-state="busy"] {
+  cursor: progress;
+}
+
+.igss-inline[data-state="done"] {
+  --_color: #1f9d55;
+}
+
+.igss-inline[data-state="error"] {
+  --_color: #d64545;
+}
+
+.igss-inline svg {
+  width: 24px;
+  height: 24px;
+}
+
+.igss-inline[data-state="busy"] svg {
+  animation: igss-spin 0.8s linear infinite;
+}
+
 @keyframes igss-spin {
   to {
     transform: rotate(360deg);
