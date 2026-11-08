@@ -15,6 +15,7 @@
 
   const ICONS = {
     idle: '<path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" />',
+    all: '<path d="M8 3h11a2 2 0 0 1 2 2v11" /><rect x="3" y="7" width="14" height="14" rx="2" /><path d="M10 10.5v6m0 0-2.75-2.75M10 16.5l2.75-2.75" />',
     busy: '<path d="M12 3a9 9 0 1 0 9 9" />',
     done: '<path d="m5 12.5 4.5 4.5L19 7.5" />',
     error: '<path d="M12 7v6m0 4h.01" />',
@@ -98,12 +99,15 @@
     return best.url;
   }
 
-  function fileName(owner, item, url) {
+  // `position` (1-based) is added when saving a whole carousel so the files
+  // sort in the same order as the post.
+  function fileName(owner, item, url, position) {
     const ext = new URL(url).pathname.split('.').pop() || (item.video_versions ? 'mp4' : 'jpg');
     const takenAt = item.taken_at || owner.taken_at || Date.now() / 1000;
     const date = new Date(takenAt * 1000).toISOString().slice(0, 10);
     const user = (owner.user?.username || 'instagram').replace(/[^\w.-]/g, '_');
-    return `${user}_${date}_${toMediaId(item.pk || item.id)}.${ext}`;
+    const suffix = position ? `_${String(position).padStart(2, '0')}` : '';
+    return `${user}_${date}_${toMediaId(item.pk || item.id)}${suffix}.${ext}`;
   }
 
   // ---------- Hand-off to the extension ----------
@@ -125,7 +129,8 @@
 
   // ---------- Buttons ----------
 
-  function createButton(className, label, onDownload) {
+  // `getFiles` resolves to a list of { url, filename } to save.
+  function createButton(className, label, getFiles, idleIcon = ICONS.idle) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = className;
@@ -136,7 +141,8 @@
       button.dataset.state = state;
       button.title = title;
       button.setAttribute('aria-label', title);
-      button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[state]}</svg>`;
+      const icon = state === 'idle' ? idleIcon : ICONS[state];
+      button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`;
       if (state === 'done' || state === 'error') {
         resetTimer = setTimeout(() => setState('idle', label), state === 'error' ? 4000 : 1500);
       }
@@ -153,9 +159,12 @@
       if (button.dataset.state === 'busy') return;
       setState('busy', 'Downloading…');
       try {
-        const { url, filename } = await onDownload(button);
-        await saveFile(url, filename);
-        setState('done', `Saved ${filename}`);
+        const files = await getFiles(button);
+        for (const [i, { url, filename }] of files.entries()) {
+          if (files.length > 1) setState('busy', `Downloading ${i + 1} of ${files.length}…`);
+          await saveFile(url, filename);
+        }
+        setState('done', files.length > 1 ? `Saved ${files.length} files` : `Saved ${files[0].filename}`);
       } catch (err) {
         console.warn('[IG Story Saver]', err);
         setState('error', `Download failed: ${err.message}`);
@@ -186,7 +195,7 @@
 
     const media = await fetchMediaInfo(id);
     const url = bestUrl(media);
-    return { url, filename: fileName(media, media, url) };
+    return [{ url, filename: fileName(media, media, url) }];
   }
 
   const storyButton = createButton('igss-button', 'Download this story', downloadStory);
@@ -258,27 +267,90 @@
     return item;
   }
 
-  async function downloadPost(button) {
+  async function fetchPost(button) {
     const scope = postScope(button);
     const id = postId(scope);
     if (!id) throw new Error("Couldn't find this post");
-
-    const post = await fetchMediaInfo(id);
-    const item = pickCarouselItem(post, visibleMedia(scope));
-    const url = bestUrl(item);
-    return { url, filename: fileName(post, item, url) };
+    return { scope, post: await fetchMediaInfo(id) };
   }
 
-  // Put a download icon just left of every post's Save (bookmark) icon.
+  async function downloadPost(button) {
+    const { scope, post } = await fetchPost(button);
+    const item = pickCarouselItem(post, visibleMedia(scope));
+    const url = bestUrl(item);
+    return [{ url, filename: fileName(post, item, url) }];
+  }
+
+  async function downloadWholePost(button) {
+    const { post } = await fetchPost(button);
+    const items = post.carousel_media?.length ? post.carousel_media : [post];
+    return items.map((item, i) => {
+      const url = bestUrl(item);
+      return { url, filename: fileName(post, item, url, items.length > 1 ? i + 1 : undefined) };
+    });
+  }
+
+  // Carousels keep at least the current and the next slide in the DOM, each
+  // in its own <li>; single posts have one big photo/video.
+  function isCarousel(scope) {
+    const slides = new Set();
+    for (const el of scope.querySelectorAll('li img, li video')) {
+      if (el.getBoundingClientRect().width >= 150) slides.add(el.closest('li'));
+    }
+    return slides.size > 1;
+  }
+
+  // Put a download icon just left of every post's Save (bookmark) icon, plus
+  // a "download all" icon on posts with several photos/videos.
+  //
+  // Instagram opens its "Save to collection" popover when the pointer enters
+  // the wrapper around the Save icon, so the icons must sit *outside* it:
+  // climb past every wrapper that holds only the Save icon and attach to the
+  // action bar itself. The bar only lays out its own two items (actions left,
+  // Save right), so the icons are absolutely positioned over it instead of
+  // joining its flow.
+  const postGroups = new Map(); // .igss-actions → its Save block
+
   function addPostButtons() {
     if (location.pathname.startsWith('/stories/')) return;
     for (const svg of document.querySelectorAll(BOOKMARK_SVG)) {
-      const saveButton = svg.closest('[role="button"], button');
-      const row = saveButton?.parentElement;
-      if (!row || row.querySelector(':scope > .igss-inline')) continue;
+      let saveBlock = svg.closest('[role="button"], button');
+      while (saveBlock?.parentElement && saveBlock.parentElement.children.length === 1) {
+        saveBlock = saveBlock.parentElement;
+      }
+      const bar = saveBlock?.parentElement;
+      if (!bar) continue;
 
-      row.classList.add('igss-save-row');
-      row.insertBefore(createButton('igss-inline', 'Download', downloadPost), saveButton);
+      let group = bar.querySelector(':scope > .igss-actions');
+      if (!group) {
+        group = document.createElement('div');
+        group.className = 'igss-actions';
+        group.append(createButton('igss-inline', 'Download this photo/video', downloadPost));
+        if (getComputedStyle(bar).position === 'static') bar.classList.add('igss-bar');
+        bar.append(group);
+        postGroups.set(group, saveBlock);
+      }
+      if (!group.querySelector('.igss-inline-all') && isCarousel(postScope(bar))) {
+        group.append(
+          createButton('igss-inline igss-inline-all', 'Download all photos/videos', downloadWholePost, ICONS.all),
+        );
+      }
+    }
+    placePostButtons();
+  }
+
+  // Anchor each group's right edge to the left edge of Save, vertically centred on it.
+  function placePostButtons() {
+    for (const [group, saveBlock] of postGroups) {
+      if (!group.isConnected || !saveBlock.isConnected) {
+        group.remove();
+        postGroups.delete(group);
+        continue;
+      }
+      const bar = group.parentElement.getBoundingClientRect();
+      const save = saveBlock.getBoundingClientRect();
+      group.style.right = `${bar.right - save.left}px`;
+      group.style.top = `${save.top - bar.top + (save.height - group.offsetHeight) / 2}px`;
     }
   }
 
@@ -296,5 +368,8 @@
 
   addPostButtons();
   setInterval(placeStoryButton, 200);
-  addEventListener('resize', placeStoryButton);
+  addEventListener('resize', () => {
+    placeStoryButton();
+    placePostButtons();
+  });
 })();

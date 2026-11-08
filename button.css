@@ -53,8 +53,14 @@
   animation: igss-spin 0.8s linear infinite;
 }
 
-/* Feed / post: plain icon next to Instagram's Save icon */
-.igss-save-row {
+/* Feed / post: plain icons laid over Instagram's action bar, just left of
+   Save (page.js sets right/top). Out of the bar's flow so its layout stays. */
+.igss-bar {
+  position: relative;
+}
+
+.igss-actions {
+  position: absolute;
   display: flex;
   align-items: center;
 }

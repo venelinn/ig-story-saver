@@ -3,7 +3,7 @@
 Chrome extension that adds download buttons to Instagram and saves photos and videos in their original quality:
 
 - **Stories**: a round button just right of the story you're watching.
-- **Feed and post pages**: a download icon left of each post's Save icon. On multi-photo posts it saves the slide you're looking at.
+- **Feed and post pages**: a download icon left of each post's Save icon. On multi-photo posts it saves the slide you're looking at, and a second **download all** icon saves every photo and video in the post (numbered `_01`, `_02`, … in post order).
 
 ## Install
 
