@@ -58,7 +58,7 @@
 
     for (let depth = 0; fiber && depth < 40; depth++, fiber = fiber.return) {
       const p = fiber.memoizedProps;
-      for (const value of [p?.media?.pk, p?.item?.pk, p?.mediaId, p?.post?.id]) {
+      for (const value of [p?.media?.pk, p?.item?.pk, p?.mediaId, p?.post?.id, p?.coreVideoPlayerMetaData?.videoFBID]) {
         const id = toMediaId(value);
         if (id && !ids.includes(id)) ids.push(id);
       }
@@ -81,15 +81,24 @@
     }
   }
 
-  async function fetchMediaInfo(id) {
-    const res = await fetch(`/api/v1/media/${id}/info/`, {
-      headers: { 'x-ig-app-id': igAppId() },
-      credentials: 'include',
-    });
+  async function apiGet(path) {
+    const res = await fetch(path, { headers: { 'x-ig-app-id': igAppId() }, credentials: 'include' });
     if (!res.ok) throw new Error(`Instagram answered ${res.status}`);
-    const media = (await res.json()).items?.[0];
+    return res.json();
+  }
+
+  async function fetchMediaInfo(id) {
+    const media = (await apiGet(`/api/v1/media/${id}/info/`)).items?.[0];
     if (!media) throw new Error('Instagram returned no media');
     return media;
+  }
+
+  // Everything currently in a user's story.
+  async function fetchUserStories(username) {
+    const userId = (await apiGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`)).data?.user?.id;
+    if (!userId) throw new Error(`Couldn't find @${username}`);
+    const data = await apiGet(`/api/v1/feed/reels_media/?reel_ids=${userId}`);
+    return data.reels?.[userId]?.items || data.reels_media?.[0]?.items || [];
   }
 
   function bestUrl(item) {
@@ -185,15 +194,48 @@
     );
   }
 
-  async function downloadStory() {
-    const el = currentStoryElement();
-    const id =
-      toMediaId(location.pathname.split('/')[3]) ||
-      (el?.tagName === 'IMG' && idFromImageUrl(el.currentSrc || el.src)) ||
-      (el && idsFromReact(el)[0]);
-    if (!id) throw new Error("Couldn't find this story. Let it start playing and try again.");
+  // Story URLs used to end in the story's id (/stories/<user>/<id>/); now
+  // they often stop at the username. Then match the ids on the page against
+  // the user's current stories.
+  async function findStory() {
+    const [, , username, urlId] = location.pathname.split('/');
+    const fromUrl = toMediaId(urlId);
+    if (fromUrl) return fetchMediaInfo(fromUrl);
 
-    const media = await fetchMediaInfo(id);
+    const el = currentStoryElement();
+    const candidates = [
+      el?.tagName === 'IMG' && idFromImageUrl(el.currentSrc || el.src),
+      ...(el ? idsFromReact(el) : []),
+    ].filter(Boolean);
+
+    // The video player's id is usually the story's own id; try those first.
+    let lastError;
+    for (const id of candidates) {
+      try {
+        return await fetchMediaInfo(id);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    if (username && username !== 'highlights') {
+      try {
+        const items = await fetchUserStories(username);
+        const item =
+          items.find((it) => candidates.includes(toMediaId(it.pk || it.id))) ||
+          items.find((it) => candidates.some((id) => JSON.stringify(it).includes(id))) ||
+          (items.length === 1 ? items[0] : null);
+        if (item) return item;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    console.warn('[IG Story Saver] story lookup', { path: location.pathname, candidates, lastError });
+    throw new Error("Couldn't find this story. Let it start playing and try again.");
+  }
+
+  async function downloadStory() {
+    const media = await findStory();
     const url = bestUrl(media);
     return [{ url, filename: fileName(media, media, url) }];
   }

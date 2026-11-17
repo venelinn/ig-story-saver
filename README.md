@@ -17,7 +17,7 @@ Files are saved straight to your Downloads folder as `<user>_<date>_<media id>.<
 
 | File | Role |
 | --- | --- |
-| `page.js` | Runs in Instagram's page. Works out the media id (story URL, the post's `/p/<shortcode>` link, the `ig_cache_key` in image URLs, or Instagram's React data), asks `/api/v1/media/<id>/info/` for the best video/photo URL, and draws the buttons. |
+| `page.js` | Runs in Instagram's page. Works out the media id (story URL, the post's `/p/<shortcode>` link, the `ig_cache_key` in image URLs, or Instagram's React data, such as the video player's `videoFBID`), asks `/api/v1/media/<id>/info/` for the best video/photo URL, and draws the buttons. |
 | `bridge.js` | Relays the download request from the page to the extension (the page can't call `chrome.*`). |
 | `background.js` | Saves the file with `chrome.downloads`. |
 | `button.css` | Button styles (idle, busy, done, error). |
@@ -26,4 +26,6 @@ Files are saved straight to your Downloads folder as `<user>_<date>_<media id>.<
 
 - No "download all": the endpoint that lists a whole story set (`/api/v1/feed/reels_media/`) currently returns 500.
 - When the media id isn't in the URL or an image link (e.g. a video slide in a carousel), it's read from Instagram's internal React props, which can change with Instagram updates.
+- Story URLs often stop at the username (`/stories/<user>/`) with no story id. The id then comes from the video player's React data; if that fails, the user's story list is fetched as a fallback (that lookup currently 404s).
+- Reels opened from Explore: Instagram keeps the first reel's URL while you scroll, so every reel downloads as the first one.
 - The feed icon is placed by finding Instagram's bookmark icon; if Instagram redraws that icon, the selector in `BOOKMARK_SVG` needs updating.
